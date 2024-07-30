@@ -1,0 +1,118 @@
+zabbix_export:
+  version: '6.4'
+  template_groups:
+    - uuid: b9390195ecad4986968746a2a9b56354
+      name: 'My Templates'
+  templates:
+    - uuid: e76efeaa556145d1a73212646a2d0ac1
+      template: 'Windows Update Template'
+      name: 'Windows Update Template'
+      vendor:
+        name: Gros
+        version: 6.4-0
+      groups:
+        - name: 'My Templates'
+      items:
+        - uuid: dbe89f48d7e94c9f89c4ba003f24b04f
+          name: 'Windows Update Last Installation Success Date'
+          key: 'system.run[powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$LastDate=((New-Object -com ''Microsoft.Update.AutoUpdate'').Results).LastInstallationSuccessDate; IF(!$LastDate -or $LastDate -lt (Get-Date ''01/01/1970'')){(New-TimeSpan -Start (Get-Date ''01/01/1970'') -End (Get-Date ''01/01/1970'')).TotalSeconds}else{(New-TimeSpan -Start (Get-Date "01/01/1970") -End $LastDate).TotalSeconds};"]'
+          delay: 12h
+          trends: '0'
+          units: unixtime
+          description: |
+            Via Powershell get Last Update Installation date
+            If No Date or Date < 01/01/1970 then 01/01/1970 (To Zabbix this means Never)
+          preprocessing:
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1d
+          tags:
+            - tag: component
+              value: os
+            - tag: component
+              value: 'windows update'
+        - uuid: 2e8dfb6254e44ec6b9ae8406dcbb5d63
+          name: 'Windows Update Last Search Success Date'
+          key: 'system.run[powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$LastDate=((New-Object -com ''Microsoft.Update.AutoUpdate'').Results).LastSearchSuccessDate; IF(!$LastDate -or $LastDate -lt (Get-Date ''01/01/1970'')){(New-TimeSpan -Start (Get-Date ''01/01/1970'') -End (Get-Date ''01/01/1970'')).TotalSeconds}else{(New-TimeSpan -Start (Get-Date "01/01/1970") -End $LastDate).TotalSeconds};"]'
+          delay: 12h
+          trends: '0'
+          units: unixtime
+          description: |
+            Via Powershell get Last Search Update date
+            If No Date or Date < 01/01/1970 then 01/01/1970 (To Zabbix this means Never)
+          preprocessing:
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1d
+          tags:
+            - tag: component
+              value: os
+            - tag: component
+              value: 'windows update'
+        - uuid: a13e3c9ed59c4c37b7a81e0a2d794703
+          name: 'Windows Update Days Since last Succesfull Search'
+          type: CALCULATED
+          key: winupdate.dayssincesucessearch
+          delay: 12h
+          value_type: FLOAT
+          trends: '0'
+          units: '!days'
+          params: '(now() - last(//system.run[powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$LastDate=((New-Object -com ''Microsoft.Update.AutoUpdate'').Results).LastSearchSuccessDate; IF(!$LastDate -or $LastDate -lt (Get-Date ''01/01/1970'')){(New-TimeSpan -Start (Get-Date ''01/01/1970'') -End (Get-Date ''01/01/1970'')).TotalSeconds}else{(New-TimeSpan -Start (Get-Date "01/01/1970") -End $LastDate).TotalSeconds};"]))/86400'
+          description: 'Extract Days from Last Search Date'
+          preprocessing:
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1d
+            - type: JAVASCRIPT
+              parameters:
+                - 'return parseFloat(value).toFixed(0);'
+          tags:
+            - tag: component
+              value: os
+            - tag: component
+              value: 'windows update'
+        - uuid: a8042d4220764db8aba2659cc9a03b45
+          name: 'Windows Update Days Since last Succesfull Installation'
+          type: CALCULATED
+          key: winupdate.dayssincesucessupdate
+          delay: 12h
+          value_type: FLOAT
+          trends: '0'
+          units: '!days'
+          params: '(now() - last(//system.run[powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$LastDate=((New-Object -com ''Microsoft.Update.AutoUpdate'').Results).LastInstallationSuccessDate; IF(!$LastDate -or $LastDate -lt (Get-Date ''01/01/1970'')){(New-TimeSpan -Start (Get-Date ''01/01/1970'') -End (Get-Date ''01/01/1970'')).TotalSeconds}else{(New-TimeSpan -Start (Get-Date "01/01/1970") -End $LastDate).TotalSeconds};"]))/86400'
+          description: 'Extract Days from Last Update Date'
+          preprocessing:
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1d
+            - type: JAVASCRIPT
+              parameters:
+                - 'return parseFloat(value).toFixed(0);'
+          tags:
+            - tag: component
+              value: os
+            - tag: component
+              value: 'windows update'
+          triggers:
+            - uuid: 6cd3f449e5424528a8b238b997f869f1
+              expression: 'last(/Windows Update Template/winupdate.dayssincesucessupdate)>{$DAYSNOTUPDATED}'
+              name: 'Windows Updates Not Installed > {$DAYSNOTUPDATED} days'
+              opdata: 'Days from Last Update: {ITEM.LASTVALUE1}'
+              priority: INFO
+              description: 'If days from last successfull update > {$DAYSNOTUPDATED} days'
+              manual_close: 'YES'
+              tags:
+                - tag: component
+                  value: os
+                - tag: component
+                  value: 'windows update'
+      tags:
+        - tag: component
+          value: os
+        - tag: component
+          value: 'windows update'
+      macros:
+        - macro: '{$DAYSNOTSEARCHEDUPDATE}'
+          value: '90'
+        - macro: '{$DAYSNOTUPDATED}'
+          value: '180'
