@@ -1,0 +1,623 @@
+zabbix_export:
+  version: '6.4'
+  template_groups:
+    - uuid: b9390195ecad4986968746a2a9b56354
+      name: 'My Templates'
+  templates:
+    - uuid: ef1c684cc2874b49862e7075552c46ae
+      template: 'IBM Tape library SNMP'
+      name: 'IBM Tape library SNMP'
+      description: |
+        For Monitoring SNMP tape library
+        https://www.circitor.fr/Mibs/Html/I/IBM-3200-MIB.php#libraryState
+        IBM-3200-MIB
+        SNMPv2-MIB
+        IF-MIB
+        
+        Maybe drive status:
+        Status of drive (unknown=0, initializing=1, empty=2, cartridge present=3, loading=4, loaded=5, cleaning=6, rewinding=7, unloading=8, inoperative=9, not loadable=10, not unloadable=11)
+      vendor:
+        name: Gros
+        version: 6.4-0
+      groups:
+        - name: 'My Templates'
+      items:
+        - uuid: da1e90abc2ad4370b6890462a80a540b
+          name: 'ICMP ping'
+          type: SIMPLE
+          key: icmpping
+          delay: '{$INTERVAL_NORMAL}'
+          history: '{$KEEP_HIST_LOW}'
+          trends: '{$KEEP_TREND_NORMAL}'
+          tags:
+            - tag: component
+              value: health
+            - tag: component
+              value: network
+          triggers:
+            - uuid: f0cc086fe987401098aaac4248568db5
+              expression: 'max(/IBM Tape library SNMP/icmpping,3)=0'
+              name: 'Unavailable by ICMP ping'
+              priority: AVERAGE
+              description: 'Last three attempts returned timeout.  Please check device connectivity.'
+              tags:
+                - tag: scope
+                  value: availability
+        - uuid: 8c88b54aa3b445219632a1839e27aeeb
+          name: 'ICMP loss'
+          type: SIMPLE
+          key: icmppingloss
+          delay: '{$INTERVAL_NORMAL}'
+          history: '{$KEEP_HIST_LOW}'
+          value_type: FLOAT
+          trends: '{$KEEP_TREND_NORMAL}'
+          units: '%'
+          tags:
+            - tag: component
+              value: health
+            - tag: component
+              value: network
+          triggers:
+            - uuid: 554d415303fd4d85ba623dcd28efb2cb
+              expression: 'min(/IBM Tape library SNMP/icmppingloss,10m)>{$ICMP_LOSS_WARN} and min(/IBM Tape library SNMP/icmppingloss,10m)<100'
+              name: 'High ICMP ping loss'
+              opdata: 'Loss: {ITEM.LASTVALUE1}'
+              priority: WARNING
+              dependencies:
+                - name: 'Unavailable by ICMP ping'
+                  expression: 'max(/IBM Tape library SNMP/icmpping,3)=0'
+              tags:
+                - tag: scope
+                  value: availability
+                - tag: scope
+                  value: performance
+        - uuid: 684f0153636b49ffa22ff55c8da2d076
+          name: 'ICMP response time'
+          type: SIMPLE
+          key: icmppingsec
+          delay: '{$INTERVAL_NORMAL}'
+          history: '{$KEEP_HIST_LOW}'
+          value_type: FLOAT
+          trends: '{$KEEP_TREND_NORMAL}'
+          units: s
+          tags:
+            - tag: component
+              value: health
+            - tag: component
+              value: network
+          triggers:
+            - uuid: 9f579f96c2a44ea1b95af54b0d97a744
+              expression: 'avg(/IBM Tape library SNMP/icmppingsec,5m)>{$ICMP_RESPONSE_TIME_WARN}'
+              name: 'High ICMP ping response time'
+              opdata: 'Value: {ITEM.LASTVALUE1}'
+              dependencies:
+                - name: 'High ICMP ping loss'
+                  expression: 'min(/IBM Tape library SNMP/icmppingloss,10m)>{$ICMP_LOSS_WARN} and min(/IBM Tape library SNMP/icmppingloss,10m)<100'
+                - name: 'Unavailable by ICMP ping'
+                  expression: 'max(/IBM Tape library SNMP/icmpping,3)=0'
+              tags:
+                - tag: scope
+                  value: availability
+                - tag: scope
+                  value: performance
+        - uuid: 733a64a3b72b4445826a9387433cb9dd
+          name: 'SNMP traps (fallback)'
+          type: SNMP_TRAP
+          key: snmptrap.fallback
+          value_type: LOG
+          logtimefmt: 'hh:mm:sszyyyy/MM/dd'
+          tags:
+            - tag: component
+              value: network
+        - uuid: 96b3c260092640a38d333340cb657a19
+          name: 'System description'
+          type: SNMP_AGENT
+          snmp_oid: 1.3.6.1.4.1.2.6.211.1.2
+          key: 'sys.description[ibm3200IdDescription.0]'
+          delay: '{$INTERVAL_DAY}'
+          value_type: CHAR
+          description: 'MIB: SNMPv2-MIB'
+          inventory_link: OS_SHORT
+          preprocessing:
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 12h
+          tags:
+            - tag: component
+              value: system
+        - uuid: 3a5368fe4ea043ffa8edd30ca7ddb999
+          name: 'System global status'
+          type: SNMP_AGENT
+          snmp_oid: 1.3.6.1.4.1.2.6.211.2.1
+          key: 'sys.globalstatus[ibm3200StatusGlobalStatus]'
+          delay: 10m
+          value_type: CHAR
+          description: 'other(1), unknown(2), ok(3), non-critical(4), critical(5), non-Recoverable(6)'
+          valuemap:
+            name: Status
+          preprocessing:
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 12h
+          tags:
+            - tag: component
+              value: system
+          triggers:
+            - uuid: 62d73124d4d54ee0ab863f7a30f2c78b
+              expression: 'last(/IBM Tape library SNMP/sys.globalstatus[ibm3200StatusGlobalStatus],#1:now-1h)>=5'
+              name: 'Tape library global status {ITEM.VALUE} major problem'
+              opdata: '{ITEM.LASTVALUE1}'
+              priority: AVERAGE
+              description: |
+                other(1),
+                unknown(2),
+                ok(3),
+                non-critical(4),
+                critical(5),
+                non-Recoverable(6)
+              manual_close: 'YES'
+              tags:
+                - tag: component
+                  value: system
+            - uuid: 8684aec56efd40d98923b06e492dad1a
+              expression: 'last(/IBM Tape library SNMP/sys.globalstatus[ibm3200StatusGlobalStatus],#1:now-1h)<>3 and last(/IBM Tape library SNMP/sys.globalstatus[ibm3200StatusGlobalStatus],#1:now-1h)<5'
+              name: 'Tape library global status {ITEM.VALUE} minor'
+              opdata: '{ITEM.LASTVALUE1}'
+              priority: WARNING
+              description: |
+                other(1),
+                unknown(2),
+                ok(3),
+                non-critical(4),
+                critical(5),
+                non-Recoverable(6)
+              tags:
+                - tag: component
+                  value: system
+        - uuid: f97be6ef123e4e9b9686c20980b5bfe7
+          name: 'System location'
+          type: SNMP_AGENT
+          snmp_oid: 1.3.6.1.2.1.1.6
+          key: 'sys.location[sysLocation.0]'
+          delay: '{$INTERVAL_DAY}'
+          value_type: CHAR
+          description: 'MIB: SNMPv2-MIB'
+          inventory_link: LOCATION
+          preprocessing:
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 12h
+          tags:
+            - tag: component
+              value: system
+        - uuid: 98117838289c46b09a3279e739743f9d
+          name: 'System manufacturer'
+          type: SNMP_AGENT
+          snmp_oid: 1.3.6.1.4.1.2.6.211.1.3.0
+          key: 'sys.manufacturer[ibm3200AgentVendor]'
+          delay: '{$INTERVAL_DAY}'
+          value_type: CHAR
+          description: 'The name of the product manufacturer.'
+          inventory_link: VENDOR
+          preprocessing:
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 12h
+          tags:
+            - tag: component
+              value: system
+        - uuid: 05f5b8d0fae248b2b1fba77c52fc639b
+          name: 'System model'
+          type: SNMP_AGENT
+          snmp_oid: 1.3.6.1.4.1.2.6.211.1.1.0
+          key: 'sys.model[ibm3200IdDisplayName]'
+          delay: '{$INTERVAL_DAY}'
+          value_type: CHAR
+          description: 'Name of this product for display purposes.'
+          inventory_link: MODEL
+          preprocessing:
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 12h
+          tags:
+            - tag: component
+              value: system
+        - uuid: 85f0bcd3161348fe9b578722186761a6
+          name: 'System uptime'
+          type: SNMP_AGENT
+          snmp_oid: 1.3.6.1.2.1.1.3.0
+          key: 'sys.uptime[sysUpTime.0]'
+          delay: '{$INTERVAL_HOUR}'
+          units: uptime
+          description: |
+            MIB: SNMPv2-MIB
+            The time (in hundredths of a second) since the network management portion of the system was last re-initialized.
+          preprocessing:
+            - type: MULTIPLIER
+              parameters:
+                - '0.01'
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 12h
+          tags:
+            - tag: component
+              value: system
+          triggers:
+            - uuid: c6d129a0246341279296e184a9b119b3
+              expression: 'last(/IBM Tape library SNMP/sys.uptime[sysUpTime.0])<10m'
+              name: 'Tape Library {HOST.NAME} has been restarted (uptime < 10m)'
+              priority: WARNING
+              description: 'The device uptime is less than 10 minutes.'
+              manual_close: 'YES'
+              tags:
+                - tag: scope
+                  value: notice
+        - uuid: 1d76cb91a87a4a698a0b519fc1ad9b77
+          name: 'SNMP agent availability'
+          type: INTERNAL
+          key: 'zabbix[host,snmp,available]'
+          delay: '{$INTERVAL_NORMAL}'
+          history: 7d
+          description: |
+            Availability of SNMP checks on the host. The value of this item corresponds to availability icons in the host list.
+            Possible value:
+            0 - not available
+            1 - available
+            2 - unknown
+          valuemap:
+            name: zabbix.host.available
+          tags:
+            - tag: component
+              value: health
+            - tag: component
+              value: network
+      discovery_rules:
+        - uuid: faef89e2f6df4652a3076ef94331827d
+          name: 'Discover Drives'
+          type: SNMP_AGENT
+          snmp_oid: 'discovery[{#DRIVEINDEX},1.3.6.1.4.1.2.6.211.3.2.1.1]'
+          key: drive.discovery
+          delay: 1d
+          lifetime: 60m
+          item_prototypes:
+            - uuid: 848db0527a034cbca1b5560bc7141b2a
+              name: 'Drive [{#DRIVEINDEX}] cleaned'
+              type: SNMP_AGENT
+              snmp_oid: '1.3.6.1.4.1.2.6.211.3.2.1.13.{#DRIVEINDEX}'
+              key: 'drive.clean[{#DRIVEINDEX}]'
+              delay: 10m
+              trends: '0'
+              tags:
+                - tag: component
+                  value: drives
+            - uuid: 968d34cafad3408bb7d05d220986455f
+              name: 'Drive [{#DRIVEINDEX}] ProductID'
+              type: SNMP_AGENT
+              snmp_oid: '1.3.6.1.4.1.2.6.211.3.2.1.8.{#DRIVEINDEX}'
+              key: 'drive.productID[{#DRIVEINDEX}]'
+              delay: 1d
+              value_type: TEXT
+              tags:
+                - tag: component
+                  value: drives
+            - uuid: 7f23fb79a0bf48d794972e6b49b984e1
+              name: 'Drive [{#DRIVEINDEX}] state'
+              type: SNMP_AGENT
+              snmp_oid: '1.3.6.1.4.1.2.6.211.3.2.1.2.{#DRIVEINDEX}'
+              key: 'drive.state[{#DRIVEINDEX}]'
+              delay: 10m
+              trends: '0'
+              valuemap:
+                name: 'Drive status'
+              tags:
+                - tag: component
+                  value: drives
+              trigger_prototypes:
+                - uuid: dda559a19c2d4f72a92ef47d41286d66
+                  expression: 'last(/IBM Tape library SNMP/drive.state[{#DRIVEINDEX}])<>2'
+                  name: 'Drive [{#DRIVEINDEX}] state'
+                  opdata: '{ITEM.LASTITEM1}'
+                  priority: INFO
+                  manual_close: 'YES'
+                  tags:
+                    - tag: component
+                      value: drives
+        - uuid: 47d8e2c8a8c74f6eb9090c3f25d5cb60
+          name: 'Discover Tape Libraries'
+          type: SNMP_AGENT
+          snmp_oid: 'discovery[{#LIBRARYINDEX},1.3.6.1.4.1.2.6.211.3.1.1.1]'
+          key: libraries.discovery
+          delay: 1d
+          lifetime: 60m
+          item_prototypes:
+            - uuid: f05e4feb63734128b6f2ee7683979275
+              name: 'Library [{#LIBRARYINDEX}] door state'
+              type: SNMP_AGENT
+              snmp_oid: '1.3.6.1.4.1.2.6.211.3.1.1.20.{#LIBRARYINDEX}'
+              key: 'library.door.state[libraryDoorState.{#LIBRARYINDEX}]'
+              description: 'State of the door(s) pf this library. The interpretation of this value is vendor specific.'
+              valuemap:
+                name: 'Library door state'
+              tags:
+                - tag: component
+                  value: Library
+              trigger_prototypes:
+                - uuid: 812d258576ef4207804d51182ad21942
+                  expression: 'min(/IBM Tape library SNMP/library.door.state[libraryDoorState.{#LIBRARYINDEX}],10m)=2'
+                  name: 'Library [{#LIBRARYINDEX}] door opened more than 10m'
+                  priority: WARNING
+                  manual_close: 'YES'
+            - uuid: b5385175c557459ba0d1e94a9f205522
+              name: 'Library [{#LIBRARYINDEX}] drives'
+              type: SNMP_AGENT
+              snmp_oid: '1.3.6.1.4.1.2.6.211.3.1.1.11.{#LIBRARYINDEX}'
+              key: 'library.drives.count[libraryDrvCnt.{#LIBRARYINDEX}]'
+              delay: '{$INTERVAL_DAY}'
+              units: drive(s)
+              description: 'Number of drives contained in this library.'
+              tags:
+                - tag: component
+                  value: Library
+            - uuid: 94237bbf45f54294b838b7a4096026bc
+              name: 'Library [{#LIBRARYINDEX}] fault description'
+              type: SNMP_AGENT
+              snmp_oid: '1.3.6.1.4.1.2.6.211.3.1.1.24.{#LIBRARYINDEX}'
+              key: 'library.fault.dscr[libraryFaultDescr.{#LIBRARYINDEX}]'
+              value_type: TEXT
+              description: 'The library Fault description.'
+              tags:
+                - tag: component
+                  value: Library
+            - uuid: e89faaba1abb4cd4812e96b66bf8d37e
+              name: 'Library [{#LIBRARYINDEX}] IO state'
+              type: SNMP_AGENT
+              snmp_oid: '1.3.6.1.4.1.2.6.211.3.1.1.21.{#LIBRARYINDEX}'
+              key: 'library.io.state[libraryImpExpState.{#LIBRARYINDEX}]'
+              description: 'State of the Import/Export element(s) of this library. The interpretation of this value is vendor specific.'
+              valuemap:
+                name: 'Library door state'
+              tags:
+                - tag: component
+                  value: Library
+              trigger_prototypes:
+                - uuid: d42153380fd544b1b11fec157daa6196
+                  expression: 'min(/IBM Tape library SNMP/library.io.state[libraryImpExpState.{#LIBRARYINDEX}],10m)=2'
+                  name: 'Library [{#LIBRARYINDEX}] IO door opened more than 10m'
+                  priority: WARNING
+                  manual_close: 'YES'
+            - uuid: ddda53b6fd434b228c881cbf9b68f98e
+              name: 'Library [{#LIBRARYINDEX}] IO drives'
+              type: SNMP_AGENT
+              snmp_oid: '1.3.6.1.4.1.2.6.211.3.1.1.13.{#LIBRARYINDEX}'
+              key: 'library.iodrives.count[libraryImpExpCnt.{#LIBRARYINDEX}]'
+              delay: '{$INTERVAL_DAY}'
+              units: 'IO slot(s)'
+              description: 'Number of import/export elements (mail slots) contained in this library'
+              tags:
+                - tag: component
+                  value: Library
+            - uuid: ffce1ad53a934d948d210e75fc5220db
+              name: 'Library [{#LIBRARYINDEX}] productID'
+              type: SNMP_AGENT
+              snmp_oid: '1.3.6.1.4.1.2.6.211.3.1.1.8.{#LIBRARYINDEX}'
+              key: 'library.product.id[libraryProductId.{#LIBRARYINDEX}]'
+              delay: '{$INTERVAL_DAY}'
+              value_type: TEXT
+              description: 'Library Product Id string as reported in a SCSI Inquiry command.'
+              tags:
+                - tag: component
+                  value: Library
+            - uuid: 178537a129bc415ab5908183cf86efc0
+              name: 'Library [{#LIBRARYINDEX}] robots'
+              type: SNMP_AGENT
+              snmp_oid: '1.3.6.1.4.1.2.6.211.3.1.1.14.{#LIBRARYINDEX}'
+              key: 'library.robot.count[libraryTranspCnt.{#LIBRARYINDEX}]'
+              delay: '{$INTERVAL_DAY}'
+              units: robot(s)
+              description: 'Number of transport elements (robots) contained in this library.'
+              tags:
+                - tag: component
+                  value: Library
+            - uuid: 2fb4aca09fe24f01a9a2b4e7d18c5bbc
+              name: 'Library [{#LIBRARYINDEX}] serial number'
+              type: SNMP_AGENT
+              snmp_oid: '1.3.6.1.4.1.2.6.211.3.1.1.10.{#LIBRARYINDEX}'
+              key: 'library.serial.num[librarySerNum.{#LIBRARYINDEX}]'
+              delay: '{$INTERVAL_DAY}'
+              value_type: TEXT
+              description: 'Library serial number as reported in SCSI Inquiry command, page 0x80.'
+              tags:
+                - tag: component
+                  value: Library
+            - uuid: cbaca1a0d73f4a03b4e17c675327e2d7
+              name: 'Library [{#LIBRARYINDEX}] fault severity'
+              type: SNMP_AGENT
+              snmp_oid: '1.3.6.1.4.1.2.6.211.3.1.1.23.{#LIBRARYINDEX}'
+              key: 'library.severity.state[libraryFaultSev.{#LIBRARYINDEX}]'
+              description: 'The library Fault severity.'
+              valuemap:
+                name: 'Library fault state'
+              tags:
+                - tag: component
+                  value: Library
+              trigger_prototypes:
+                - uuid: 4aee07d7f67046c09a3ddbb7438bedb6
+                  expression: 'last(/IBM Tape library SNMP/library.severity.state[libraryFaultSev.{#LIBRARYINDEX}],#1)=4'
+                  name: 'Library [{#LIBRARYINDEX}] has critical issue'
+                  opdata: 'last(/IBM Tape library SNMP/library.fault.dscr[libraryFaultDescr.{#LIBRARYINDEX}])'
+                  priority: HIGH
+                  manual_close: 'YES'
+                - uuid: 6236b5c55be74502ab9067f6d9aa87cf
+                  expression: 'last(/IBM Tape library SNMP/library.severity.state[libraryFaultSev.{#LIBRARYINDEX}],#1)=3'
+                  name: 'Library [{#LIBRARYINDEX}] has major issue'
+                  opdata: 'last(/IBM Tape library SNMP/library.fault.dscr[libraryFaultDescr.{#LIBRARYINDEX}])'
+                  priority: AVERAGE
+                  manual_close: 'YES'
+                - uuid: 058b6d5a789a47ea95a3f09fc49ce567
+                  expression: 'last(/IBM Tape library SNMP/library.severity.state[libraryFaultSev.{#LIBRARYINDEX}],#1)=2'
+                  name: 'Library [{#LIBRARYINDEX}] has minor issue'
+                  opdata: 'last(/IBM Tape library SNMP/library.fault.dscr[libraryFaultDescr.{#LIBRARYINDEX}])'
+                  priority: WARNING
+                  manual_close: 'YES'
+            - uuid: 5c7e811863a546b688890a6d087f6b60
+              name: 'Library [{#LIBRARYINDEX}] slots'
+              type: SNMP_AGENT
+              snmp_oid: '1.3.6.1.4.1.2.6.211.3.1.1.12.{#LIBRARYINDEX}'
+              key: 'library.slots.count[librarySlotCnt.{#LIBRARYINDEX}]'
+              delay: '{$INTERVAL_DAY}'
+              units: slot(s)
+              description: 'Number of cartridge slots contained in this library'
+              tags:
+                - tag: component
+                  value: Library
+            - uuid: d9be87cd66254e6ebb186fa2699275be
+              name: 'Library [{#LIBRARYINDEX}] state'
+              type: SNMP_AGENT
+              snmp_oid: '1.3.6.1.4.1.2.6.211.3.1.1.2.{#LIBRARYINDEX}'
+              key: 'library.state[libraryState.{#LIBRARYINDEX}]'
+              description: 'State of the door(s) pf this library. The interpretation of this value is vendor specific.'
+              valuemap:
+                name: Status
+              tags:
+                - tag: component
+                  value: Library
+            - uuid: d36498a46a0c43799c60b2999cbe70d4
+              name: 'Library [{#LIBRARYINDEX}] vendor'
+              type: SNMP_AGENT
+              snmp_oid: '1.3.6.1.4.1.2.6.211.3.1.1.7.{#LIBRARYINDEX}'
+              key: 'library.vendor[libraryVendorId.{#LIBRARYINDEX}]'
+              delay: '{$INTERVAL_DAY}'
+              value_type: TEXT
+              description: 'Library Vendor'
+              tags:
+                - tag: component
+                  value: Library
+        - uuid: acffb52af5fc4cdea4971a4a35e432e3
+          name: 'Discover network interfaces'
+          type: SNMP_AGENT
+          snmp_oid: 'discovery[{#IFINDEX},1.3.6.1.2.1.2.2.1.1]'
+          key: walk.network
+          delay: 1d
+          item_prototypes:
+            - uuid: 07819ab4663549d28d7ade4df3a2f948
+              name: 'Network interface [{#IFINDEX}] admin status'
+              type: SNMP_AGENT
+              snmp_oid: '1.3.6.1.2.1.2.2.1.7.{#IFINDEX}'
+              key: 'if.adminstatus[ifAdminStatus.{#IFINDEX}]'
+              trends: '0'
+              valuemap:
+                name: 'interface status'
+              tags:
+                - tag: component
+                  value: 'network interface'
+              trigger_prototypes:
+                - uuid: 8977aff8dfd044099644c2ea060c795c
+                  expression: 'last(/IBM Tape library SNMP/if.adminstatus[ifAdminStatus.{#IFINDEX}],#1)<>1'
+                  name: 'Network interface [{#IFINDEX}] status is not up'
+                  opdata: '{ITEM.LASTVALUE1}'
+                  priority: WARNING
+                  tags:
+                    - tag: scope
+                      value: 'network availability'
+            - uuid: 39254c679c2c42019a17fbc876d624e9
+              name: 'Network interface [{#IFINDEX}] operation status'
+              type: SNMP_AGENT
+              snmp_oid: '1.3.6.1.2.1.2.2.1.8.{#IFINDEX}'
+              key: 'if.operation[ifOperStatus.{#IFINDEX}]'
+              trends: '0'
+              valuemap:
+                name: 'interface status'
+              tags:
+                - tag: component
+                  value: 'network interface'
+      tags:
+        - tag: class
+          value: hardware
+        - tag: service
+          value: 'tape library'
+      macros:
+        - macro: '{$ICMP_LOSS_WARN}'
+          value: '20'
+        - macro: '{$ICMP_RESPONSE_TIME_WARN}'
+          value: '0.15'
+      valuemaps:
+        - uuid: a7b8e02a8f444d42b080483b61bd3c99
+          name: 'Drive status'
+          mappings:
+            - value: '1'
+              newvalue: unknown
+            - value: '2'
+              newvalue: ok
+            - value: '34'
+              newvalue: 'Cleaning required'
+            - value: '153'
+              newvalue: 'Cleaning in progress'
+            - value: '217'
+              newvalue: Unloading
+            - value: '156'
+              newvalue: Idle
+            - value: '9'
+              newvalue: Writing
+        - uuid: ee3ba175fb3b4e5eb923c52523235407
+          name: 'interface status'
+          mappings:
+            - value: '1'
+              newvalue: up
+            - value: '2'
+              newvalue: down
+            - value: '3'
+              newvalue: testing
+            - value: '4'
+              newvalue: unknown
+            - value: '5'
+              newvalue: dormant
+            - value: '6'
+              newvalue: notPresent
+            - value: '7'
+              newvalue: lowerLayerDown
+        - uuid: e948bf5edd7848fb9b942084395d3dcc
+          name: 'Library door state'
+          mappings:
+            - value: '1'
+              newvalue: unknown
+            - value: '2'
+              newvalue: open
+            - value: '3'
+              newvalue: closed
+            - value: '4'
+              newvalue: locked
+        - uuid: 84b3bccbed3e41bcae0238e14d63ea03
+          name: 'Library fault state'
+          mappings:
+            - value: '1'
+              newvalue: informational
+            - value: '2'
+              newvalue: minor
+            - value: '3'
+              newvalue: major
+            - value: '4'
+              newvalue: critical
+        - uuid: 8bc43ae752794aa9bb10dce426d58e3e
+          name: Status
+          mappings:
+            - value: '1'
+              newvalue: other
+            - value: '2'
+              newvalue: unknown
+            - value: '3'
+              newvalue: ok
+            - value: '4'
+              newvalue: non-critical
+            - value: '5'
+              newvalue: critical
+            - value: '6'
+              newvalue: non-Recoverable
+        - uuid: ba259f6be87b4e65b2000a89d63144ff
+          name: zabbix.host.available
+          mappings:
+            - value: '0'
+              newvalue: 'not available'
+            - value: '1'
+              newvalue: available
+            - value: '2'
+              newvalue: unknown
