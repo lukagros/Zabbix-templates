@@ -1,0 +1,171 @@
+zabbix_export:
+  version: '6.4'
+  template_groups:
+    - uuid: b9390195ecad4986968746a2a9b56354
+      name: 'My Templates'
+  templates:
+    - uuid: 2d5b110f224140419dae5c393e690525
+      template: 'Windows Monitor Task Scheduler via Powershell'
+      name: 'Windows Monitor Task Scheduler via Powershell'
+      description: 'Monitor Windows Task Schedules via Powershell'
+      vendor:
+        name: Gros
+        version: 6.4-0
+      groups:
+        - name: 'My Templates'
+      discovery_rules:
+        - uuid: f56a2a81cd6e408e9553b7129f10ddc0
+          name: 'Discover Task Schedules'
+          key: 'system.run[powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ("Get-ScheduledTask -TaskPath ''\'' |ConvertTo-Json -Depth 1 -Compress")]'
+          delay: 6h
+          filter:
+            conditions:
+              - macro: '{#TASKAUTHOR}'
+                value: '{$TASK.AUTHOR.NOT_MATCHES}'
+                operator: NOT_MATCHES_REGEX
+                formulaid: A
+              - macro: '{#TASKNAME}'
+                value: '{$TASK.NAME.NOT_MATCHES}'
+                operator: NOT_MATCHES_REGEX
+                formulaid: B
+              - macro: '{#TASKSTATE}'
+                value: '{$TASK.STATE.NOT_MATCHES}'
+                operator: NOT_MATCHES_REGEX
+                formulaid: C
+          lifetime: 60m
+          description: |
+            Discover Task Schedules via Powershell
+            opt1:
+            system.run[powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ("Get-ScheduledTask -TaskPath '\' | where-object {$_.State -notmatch 'Disabled' -and $_.Author -ne 'Microsoft Corporation'} | ConvertTo-Csv -Delimiter ';' -NoTypeInformation ")]
+            
+            opt2:
+            system.run[powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ("Get-ScheduledTask -TaskPath '\' | where-object {$_.State -notmatch 'Disabled' -and $_.Author -ne 'Microsoft Corporation'} |ConvertTo-Json -Depth 1 -Compress")]
+          item_prototypes:
+            - uuid: 0e246000387f407d858c6b739a43dbb3
+              name: 'TaskScheduler [{#TASKNAME}] Raw'
+              key: 'system.run[powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ("Get-ScheduledTaskInfo -TaskName ''{#TASKNAME}'' |ConvertTo-Json -Depth 1")]'
+              delay: 10m
+              history: 30d
+              value_type: TEXT
+              description: 'Gets raw properties of Task scheduler'
+              tags:
+                - tag: Application
+                  value: 'Task Scheduler'
+                - tag: component
+                  value: raw
+            - uuid: 519a271c68c64d31af60fcc3687d1e96
+              name: 'TaskScheduler [{#TASKNAME}] Last Run Result'
+              type: DEPENDENT
+              key: 'task.scheduler.lastrunresult[{#TASKNAME}]'
+              value_type: CHAR
+              description: 'Numeric exit code'
+              valuemap:
+                name: 'Task Scheduler Last Result'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - $.LastTaskResult
+              master_item:
+                key: 'system.run[powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ("Get-ScheduledTaskInfo -TaskName ''{#TASKNAME}'' |ConvertTo-Json -Depth 1")]'
+              tags:
+                - tag: Application
+                  value: 'Task Scheduler'
+              trigger_prototypes:
+                - uuid: db53ced3c636455589ab919b346c532b
+                  expression: 'last(/Windows Monitor Task Scheduler via Powershell/task.scheduler.lastrunresult[{#TASKNAME}])<>0 and last(/Windows Monitor Task Scheduler via Powershell/task.scheduler.lastrunresult[{#TASKNAME}])<>267009 and last(/Windows Monitor Task Scheduler via Powershell/task.scheduler.lastrunresult[{#TASKNAME}])<>267008'
+                  name: 'Last run of  [{#TASKNAME}] with Errors'
+                  opdata: '{ITEM.LASTVALUE1}'
+                  priority: WARNING
+                  description: 'IF Last run result not 0 Successful,267009 The task is currently running, 267008 The task is ready to run at the next scheduled time'
+                  manual_close: 'YES'
+                  tags:
+                    - tag: Application
+                      value: 'Task Scheduler'
+            - uuid: 2c758c0a609744239eec5470165980b0
+              name: 'TaskScheduler [{#TASKNAME}] Next Run Time'
+              type: DEPENDENT
+              key: 'task.scheduler.nextruntime[{#TASKNAME}]'
+              units: unixtime
+              description: 'Returns as 13digit milisecond epoch'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - $.NextRunTime
+                - type: LTRIM
+                  parameters:
+                    - /Date(
+                - type: RTRIM
+                  parameters:
+                    - )/
+                - type: MULTIPLIER
+                  parameters:
+                    - '0.001'
+              master_item:
+                key: 'system.run[powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ("Get-ScheduledTaskInfo -TaskName ''{#TASKNAME}'' |ConvertTo-Json -Depth 1")]'
+              tags:
+                - tag: Application
+                  value: 'Task Scheduler'
+          lld_macro_paths:
+            - lld_macro: '{#TASKAUTHOR}'
+              path: $..Author.first()
+            - lld_macro: '{#TASKNAME}'
+              path: $..TaskName.first()
+            - lld_macro: '{#TASKSTATE}'
+              path: $..State.first()
+          preprocessing:
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 24h
+      tags:
+        - tag: application
+          value: 'Task Scheduler'
+      macros:
+        - macro: '{$TASK.AUTHOR.NOT_MATCHES}'
+          value: Microsoft
+        - macro: '{$TASK.NAME.NOT_MATCHES}'
+          value: Microsoft|User_Feed
+        - macro: '{$TASK.STATE.NOT_MATCHES}'
+          value: '1'
+          description: '1 - Disabled,2 - Queued, 3 - Ready, 4 - Running'
+      valuemaps:
+        - uuid: f29f1e64a1314c549e0ca51eec1ab761
+          name: 'Task Scheduler Last Result'
+          mappings:
+            - value: '0'
+              newvalue: Successful
+            - value: '1'
+              newvalue: 'Incorrect function called or unknown function called'
+            - value: '2'
+              newvalue: 'File not found'
+            - value: '3'
+              newvalue: 'The environment is incorrect'
+            - value: '4'
+              newvalue: 'Initialization error occurred.  There is not enough memory or di'
+            - value: '5'
+              newvalue: 'Access Denied'
+            - value: '10'
+              newvalue: 'Environment Incorrect'
+            - value: '41300'
+              newvalue: 'Task is ready to run at its next scheduled time'
+            - value: '41301'
+              newvalue: 'Task is currently running'
+            - value: '41306'
+              newvalue: 'Task is terminated'
+            - value: '267009'
+              newvalue: 'The task is currently running'
+            - value: '267008'
+              newvalue: 'The task is ready to run at the next scheduled time'
+            - value: '267011'
+              newvalue: 'Task has not yet run'
+            - value: '267013'
+              newvalue: 'One or more of the properties that are needed to run this task o'
+            - value: '267014'
+              newvalue: 'The task is completed or terminated manually'
+            - value: '2147942402'
+              newvalue: 'One of the files is not available'
+            - value: '2147942667'
+              newvalue: 'The "Start in" directory can not be found'
+            - value: '2147946720'
+              newvalue: 'The operator or administrator has refused the request'
+            - value: '3228369022'
+              newvalue: 'Unknown software exception'
