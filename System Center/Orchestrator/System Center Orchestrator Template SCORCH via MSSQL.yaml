@@ -1,0 +1,167 @@
+zabbix_export:
+  version: '6.4'
+  template_groups:
+    - uuid: b9390195ecad4986968746a2a9b56354
+      name: 'My Templates'
+  templates:
+    - uuid: ef4b831aa7f74b78ac4aa491274f95b6
+      template: 'System Center Orchestrator Template SCORCH via MSSQL'
+      name: 'System Center Orchestrator Template SCORCH via MSSQL'
+      description: |
+        For monitoring Runbooks via MSSQL
+        Must install coresponding MSSQL Driver 'ODBC Driver 18 for SQL Server'
+        In my case If Runbooks needs to be always started then name has prefix '[RUN] Runbook name' else '[NOT RUN] Runbook name'
+      vendor:
+        name: Gros
+        version: 6.4-0
+      groups:
+        - name: 'My Templates'
+      discovery_rules:
+        - uuid: 4c1bffc4cd2f445ca8868b0d84f7ca08
+          name: 'Runbook Discovery'
+          type: ODBC
+          key: 'db.odbc.get[RunbookDiscovery,,"Driver={$MSSQL.CONNSTR.SCORCH.DRIVER};Database={$MSSQL.CONNSTR.SCORCH.DB};Server={$MSSQL.CONNSTR.SCORCH.INSTANCE};Port={$MSSQL.SCORCH.PORT};TrustServerCertificate=yes;"]'
+          delay: '{$LLD_INTERVAL}'
+          params: |
+            SELECT UniqueID as ID,Name as RBNAME
+              FROM [dbo].[POLICIES] P
+            where Deleted<>1
+              and Name like '[[]RUN]%'
+              order by Name
+          username: '{$MSSQL.SCORCH.USER}'
+          password: '{$MSSQL.SCORCH.PASSWORD}'
+          lifetime: '{$LLD_KEEP_PERIOD}'
+          item_prototypes:
+            - uuid: 30afb206d7f44dedbdf3dfde7d836778
+              name: 'Runbooks {#RBNAME} Info discovery'
+              type: ODBC
+              key: 'db.odbc.get[runbookinfo."{#ID}",,"Driver={$MSSQL.CONNSTR.SCORCH.DRIVER};Database={$MSSQL.CONNSTR.SCORCH.DB};Server={$MSSQL.CONNSTR.SCORCH.INSTANCE};Port={$MSSQL.SCORCH.PORT};TrustServerCertificate=yes;"]'
+              delay: '{$INTERVAL_NORMAL}'
+              history: 7d
+              value_type: TEXT
+              params: |
+                SELECT P.UniqueID as ID,Name as RBNAME,Description as RBDESCRIPTION,ISNULL((select Name from [Microsoft.SystemCenter.Orchestrator.Runtime.Internal].[JobStatus] where id=J.statusid),'Not Running') as RBSTATUS,
+                (CASE WHEN Name like '[[]RUN]%'  then 'RUN' else 'NOTRUN' end) as RBMUSTRUN,
+                ISNULL((SELECT TOP 1
+                                            CONCAT(ai.StartTime,' - ',ai.Status,' - ',a.Name,' - ',left(oid.Value,300))
+                                            FROM
+                                            [Microsoft.SystemCenter.Orchestrator].[Runbooks] r
+                                            INNER JOIN [Microsoft.SystemCenter.Orchestrator].[Activities] a ON a.RunbookId = r.Id
+                                            INNER JOIN [Microsoft.SystemCenter.Orchestrator.Runtime].[ActivityInstances] ai ON ai.ActivityId = a.Id
+                                            INNER JOIN [Microsoft.SystemCenter.Orchestrator].[Resources] res ON res.UniqueId = r.Id
+                                            INNER JOIN dbo.OBJECTS OBJ on OBJ.ParentID = r.Id
+                                            INNER JOIN OBJECTINSTANCES OI on OI.ObjectID = OBJ.UniqueID
+                                            INNER JOIN OBJECTINSTANCEDATA OID on OID.ObjectInstanceID = Oi.UniqueID 
+                                            WHERE r.ID = P.UniqueID
+                                            and cast(ai.StartTime as date)=cast(GETDATE() as date)
+                                            and cast(OI.StartTime as date)=cast(GETDATE() as date)
+                							and isnull(ai.Status,'') = 'Failed' 
+                                            AND OID.[Key] = 'ErrorSummary.Text' 
+                                            AND OID.Value <> '' 
+                                            GROUP BY  oid.UniqueID,r.Id,r.Description, r.Path, a.Name , oid.Value ,ai.Status, ai.StartTime, r.Name
+                							),'NO ERROR') as ERROR
+                  FROM [dbo].[POLICIES] P
+                  left JOIN (  select RunbookId,StatusId,CreationTime from [Microsoft.SystemCenter.Orchestrator.Runtime.Internal].[Jobs] J0
+                  group by RunbookId,StatusId,CreationTime
+                  having CreationTime = (select max(creationtime) from [Microsoft.SystemCenter.Orchestrator.Runtime.Internal].[Jobs] J1 where J1.runbookid = J0.RunbookId)) J ON P.UniqueID=J.RunbookId
+                  where Deleted<>1
+                  and P.UniqueID = '{#ID}'
+                  order by Name
+              username: '{$MSSQL.SCORCH.USER}'
+              password: '{$MSSQL.SCORCH.PASSWORD}'
+              tags:
+                - tag: Application
+                  value: SCORCH
+                - tag: Runbook
+                  value: '{#RBNAME}'
+            - uuid: 236e38328e8b45dcbd61269a5a69610b
+              name: 'Runbook {#RBNAME} Error'
+              type: DEPENDENT
+              key: 'runbook.error.id[{#ID}]'
+              history: 20d
+              value_type: CHAR
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - $..ERROR.first()
+              master_item:
+                key: 'db.odbc.get[runbookinfo."{#ID}",,"Driver={$MSSQL.CONNSTR.SCORCH.DRIVER};Database={$MSSQL.CONNSTR.SCORCH.DB};Server={$MSSQL.CONNSTR.SCORCH.INSTANCE};Port={$MSSQL.SCORCH.PORT};TrustServerCertificate=yes;"]'
+              tags:
+                - tag: Application
+                  value: SCORCH
+                - tag: Runbook
+                  value: '{#RBNAME}'
+              trigger_prototypes:
+                - uuid: b36b83534179434da13bbfb4d81fbcf7
+                  expression: 'last(/System Center Orchestrator Template SCORCH via MSSQL/runbook.error.id[{#ID}],#1)<>"NO ERROR"'
+                  name: 'Runbook {#RBNAME} Error'
+                  opdata: '{ITEM.LASTVALUE1}'
+                  priority: WARNING
+                  manual_close: 'YES'
+            - uuid: 1bf39b4ed266453b90fbc0767a94dfb8
+              name: 'Runbook {#RBNAME} Status'
+              type: DEPENDENT
+              key: 'runbook.status.id[{#ID}]'
+              history: 20d
+              value_type: CHAR
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - $..RBSTATUS.first()
+              master_item:
+                key: 'db.odbc.get[runbookinfo."{#ID}",,"Driver={$MSSQL.CONNSTR.SCORCH.DRIVER};Database={$MSSQL.CONNSTR.SCORCH.DB};Server={$MSSQL.CONNSTR.SCORCH.INSTANCE};Port={$MSSQL.SCORCH.PORT};TrustServerCertificate=yes;"]'
+              tags:
+                - tag: Application
+                  value: SCORCH
+                - tag: Runbook
+                  value: '{#RBNAME}'
+              trigger_prototypes:
+                - uuid: 1c4ef27907e14071b36a9b1dafa91ea6
+                  expression: 'last(/System Center Orchestrator Template SCORCH via MSSQL/runbook.status.id[{#ID}])<>"Running"'
+                  name: 'Runbook {#RBNAME} Status Not Running'
+                  opdata: '{ITEM.LASTVALUE1}'
+                  priority: WARNING
+                  manual_close: 'YES'
+          lld_macro_paths:
+            - lld_macro: '{#ID}'
+              path: $.ID
+            - lld_macro: '{#RBNAME}'
+              path: $.RBNAME
+          preprocessing:
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1d
+      tags:
+        - tag: Application
+          value: SCORCH
+        - tag: Application
+          value: 'System Center Orchestrator'
+      macros:
+        - macro: '{$INTERVAL_FAST}'
+          value: 2m
+        - macro: '{$INTERVAL_NORMAL}'
+          value: 5m
+        - macro: '{$INTERVAL_SLOW}'
+          value: 8h
+        - macro: '{$LLD_INTERVAL}'
+          value: 24h
+        - macro: '{$LLD_KEEP_PERIOD}'
+          value: 60m
+        - macro: '{$MSSQL.CONNSTR.SCORCH.DB}'
+          value: '<Default database>'
+          description: 'Default Database'
+        - macro: '{$MSSQL.CONNSTR.SCORCH.DRIVER}'
+          value: 'ODBC Driver 18 for SQL Server'
+          description: 'Driver for connecting to MSSQL Database'
+        - macro: '{$MSSQL.CONNSTR.SCORCH.INSTANCE}'
+          value: '<Instance name here>'
+          description: 'Instance for connection string (Standalone - INSTANCE, Clustered - SQLSERVER\INSTANCE)'
+        - macro: '{$MSSQL.SCORCH.PASSWORD}'
+          value: '<Put your password here>'
+          description: 'MSSQL user password.'
+        - macro: '{$MSSQL.SCORCH.PORT}'
+          value: '1433'
+          description: 'MSSQL TCP port.'
+        - macro: '{$MSSQL.SCORCH.USER}'
+          value: '<Put your username here>'
+          description: 'MSSQL username.'

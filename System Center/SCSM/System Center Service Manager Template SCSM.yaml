@@ -1,0 +1,129 @@
+zabbix_export:
+  version: '6.4'
+  template_groups:
+    - uuid: b9390195ecad4986968746a2a9b56354
+      name: 'My Templates'
+  templates:
+    - uuid: 2120f8c325c549af8f6c93ac81215098
+      template: 'System Center Service Manager Template SCSM'
+      name: 'System Center Service Manager Template SCSM'
+      description: |
+        Template for SCSM
+        DW jobs
+        Workflows
+        For monitoring 
+        SCSM Workflows on SCSM server
+        and monitoring SCS DW jobs on SCSM DateWarehouse server
+      groups:
+        - name: 'My Templates'
+      items:
+        - uuid: c49ce1b9f7394c24b6beb088ea883736
+          name: 'SCSM DW JOB RAW'
+          type: ZABBIX_ACTIVE
+          key: 'SCSM.info[SCSMDWJobs]'
+          delay: '{$INTERVAL_HOUR}'
+          history: 1d
+          value_type: TEXT
+          tags:
+            - tag: Application
+              value: 'System Center Service Manager'
+            - tag: Component
+              value: 'DW Jobs'
+            - tag: Value
+              value: RAW
+        - uuid: 6bb5f56623374812afdb99fa7c3b2169
+          name: 'SCSM Workflow RAW'
+          type: ZABBIX_ACTIVE
+          key: 'SCSM.info[SCSMWorkflow]'
+          delay: '{$INTERVAL_HOUR}'
+          history: 1d
+          value_type: TEXT
+          tags:
+            - tag: Application
+              value: 'System Center Service Manager'
+            - tag: Component
+              value: Workflows
+            - tag: Value
+              value: RAW
+      discovery_rules:
+        - uuid: 56ba652d806647e4a7f2a02022ad1387
+          name: 'SCSM DW Jobs Discovery'
+          type: DEPENDENT
+          key: SCSM.info.discovery.dwjobs
+          delay: '0'
+          lifetime: '0'
+          item_prototypes:
+            - uuid: 0e4354433e324ecda96b7bc342140fad
+              name: 'SCSM DWJOB {#DWJOBNAME} Status'
+              type: DEPENDENT
+              key: 'SCSM.info.dwjob.status[{#DWJOBNAME}.{#DWJOBCATEGORY}]'
+              history: 20d
+              value_type: TEXT
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$[?(@.Name==''{#DWJOBNAME}'')].Status.first()'
+              master_item:
+                key: 'SCSM.info[SCSMDWJobs]'
+              tags:
+                - tag: Application
+                  value: 'System Center Service Manager'
+                - tag: component
+                  value: DWJob
+              trigger_prototypes:
+                - uuid: f07a342f11f54980be490226170e88da
+                  expression: 'last(/System Center Service Manager Template SCSM/SCSM.info.dwjob.status[{#DWJOBNAME}.{#DWJOBCATEGORY}],#1)="Failed"'
+                  name: 'SCSM DWJOB {#DWJOBNAME} Status'
+                  priority: WARNING
+          master_item:
+            key: 'SCSM.info[SCSMDWJobs]'
+          lld_macro_paths:
+            - lld_macro: '{#DWJOBCATEGORY}'
+              path: $.CategoryName
+            - lld_macro: '{#DWJOBNAME}'
+              path: $.Name
+            - lld_macro: '{#DWJOBSTATUS}'
+              path: $.Status
+        - uuid: 691bac19fc414c1ab346fb6026542e04
+          name: 'SCSM Workflows Discovery'
+          type: DEPENDENT
+          key: SCSM.info.discovery.workflows
+          delay: '0'
+          lifetime: '0'
+          item_prototypes:
+            - uuid: 698a22851f7c43fcb4c37ce9bb8f8553
+              name: 'SCSM Workflow ''{#WFDNAME}'' Status'
+              type: DEPENDENT
+              key: 'SCSM.info.wf.status[{#WFNAME}]'
+              history: 20d
+              value_type: TEXT
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$[?(@.Name==''{#WFNAME}'')].Status.first()'
+              master_item:
+                key: 'SCSM.info[SCSMWorkflow]'
+              tags:
+                - tag: Application
+                  value: 'System Center Service Manager'
+                - tag: component
+                  value: Workflows
+              trigger_prototypes:
+                - uuid: 42d9232004cf4f5582876a44b6c8bb88
+                  expression: 'last(/System Center Service Manager Template SCSM/SCSM.info.wf.status[{#WFNAME}],#1)<>0'
+                  name: 'SCSM Workflow ''{#WFDNAME}'' Status'
+                  priority: WARNING
+          master_item:
+            key: 'SCSM.info[SCSMWorkflow]'
+          lld_macro_paths:
+            - lld_macro: '{#WFDNAME}'
+              path: $.DisplayName
+            - lld_macro: '{#WFMGPACK}'
+              path: $.ManagementPackName
+            - lld_macro: '{#WFNAME}'
+              path: $.Name
+            - lld_macro: '{#WFSTATUS}'
+              path: $.Status
+      tags:
+        - tag: Application
+          value: 'System Center Service Manager'
