@@ -1,0 +1,807 @@
+zabbix_export:
+  version: '6.4'
+  template_groups:
+    - uuid: b9390195ecad4986968746a2a9b56354
+      name: 'My Templates'
+  templates:
+    - uuid: db73ac7389254f87974370eec01c1ceb
+      template: 'IBM Storwize via SSH'
+      name: 'IBM Storwize via SSH'
+      description: |
+        Tested on IBM Storwize V5100F with Zabbix 6.4
+        Also works with V3700
+        
+        Create host
+        Add Agent IP
+        populate {$SSHUSER} and {$SSHPASSWORD} with SSH password
+        
+        Deploying on your own risk, because this is very intensive on storage
+      vendor:
+        name: Gros
+        version: 6.4-0
+      groups:
+        - name: 'My Templates'
+      items:
+        - uuid: b4b619ffa2114daaa989dac57145411b
+          name: 'ICMP ping'
+          type: SIMPLE
+          key: icmpping
+          delay: 2m
+          history: 1w
+          tags:
+            - tag: component
+              value: health
+            - tag: component
+              value: network
+        - uuid: 575a05c2103b4453a91011f174e084e8
+          name: 'ICMP loss'
+          type: SIMPLE
+          key: icmppingloss
+          delay: 2m
+          history: 1w
+          value_type: FLOAT
+          units: '%'
+          tags:
+            - tag: component
+              value: health
+            - tag: component
+              value: network
+        - uuid: d80217f3eae54be7b17b5099f327ed29
+          name: 'ICMP response time'
+          type: SIMPLE
+          key: icmppingsec
+          delay: 2m
+          history: 1w
+          value_type: FLOAT
+          units: s
+          tags:
+            - tag: component
+              value: health
+            - tag: component
+              value: network
+        - uuid: 4b3c8c3e6c444c4d8a14cc286b78c761
+          name: 'System Mdisk Capacity V3700'
+          type: SSH
+          key: 'ssh.run[lssystemv3700.total_mdisk_capacity,{HOST.IP},22,utf8]'
+          delay: 1d
+          value_type: FLOAT
+          units: '!TB'
+          params: 'lssystem -delim ,| grep total_mdisk_capacity |cut -d'','' -f2| tr -d ''TB'''
+          username: '{$SSHUSER}'
+          password: '{$SSHPASSWORD}'
+          tags:
+            - tag: component
+              value: capacity
+        - uuid: e53967adc2ac4e9aa8080275893c9ece
+          name: 'System Total Used Capacity V3700'
+          type: SSH
+          key: 'ssh.run[lssystemv3700.total_used_capacity,{HOST.IP},22,utf8]'
+          delay: 1d
+          value_type: FLOAT
+          units: '!TB'
+          params: 'lssystem -delim ,| grep total_used_capacity |cut -d'','' -f2| tr -d ''TB'''
+          username: '{$SSHUSER}'
+          password: '{$SSHPASSWORD}'
+          tags:
+            - tag: component
+              value: capacity
+        - uuid: 3f6d3211b9f448748c69c34ed8503fe7
+          name: 'System Physical Capacity V5100'
+          type: SSH
+          key: 'ssh.run[lssystemv5100.physical_capacity,{HOST.IP},22,utf8]'
+          delay: 1d
+          value_type: FLOAT
+          units: '!TB'
+          params: 'lssystem -delim ,| grep physical_capacity|cut -d'','' -f2| tr -d ''TB'''
+          username: '{$SSHUSER}'
+          password: '{$SSHPASSWORD}'
+          tags:
+            - tag: component
+              value: capacity
+        - uuid: 1497527126c84a28b945dc4b44205952
+          name: 'System Physical Free Capacity V5100'
+          type: SSH
+          key: 'ssh.run[lssystemv5100.physical_free_capacity,{HOST.IP},22,utf8]'
+          delay: 1d
+          value_type: FLOAT
+          units: '!TB'
+          params: 'lssystem -delim ,| grep physical_free_capacity |cut -d'','' -f2| tr -d ''TB'''
+          username: '{$SSHUSER}'
+          password: '{$SSHPASSWORD}'
+          tags:
+            - tag: component
+              value: capacity
+        - uuid: 6d5b7309b7ce4c3c8672d58cedd13145
+          name: 'System Free Percent V3700'
+          type: CALCULATED
+          key: 'swv3700.system.free.percent[calculated,{HOST.IP},22,utf8]'
+          value_type: FLOAT
+          units: '%'
+          params: '(last(//ssh.run[lssystemv3700.total_used_capacity,{HOST.IP},22,utf8])/last(//ssh.run[lssystemv3700.total_mdisk_capacity,{HOST.IP},22,utf8]))*100'
+          tags:
+            - tag: component
+              value: capacity
+        - uuid: ed3b47639ddd4dab815f030083ea71b9
+          name: 'System Physical Free Percent V5100'
+          type: CALCULATED
+          key: 'swv5100.system.free.percent[calculated,{HOST.IP},22,utf8]'
+          value_type: FLOAT
+          units: '%'
+          params: '(last(//ssh.run[lssystemv5100.physical_free_capacity,{HOST.IP},22,utf8])/last(//ssh.run[lssystemv5100.physical_capacity,{HOST.IP},22,utf8]))*100'
+          tags:
+            - tag: component
+              value: capacity
+      discovery_rules:
+        - uuid: b540a87ee63b48e99865dbcfa5b99535
+          name: 'Discover Arrays'
+          type: SSH
+          key: 'ssh.run[lsarray.discovery,{HOST.IP},22,utf8]'
+          delay: 1d
+          params: |
+            RESULT=$(lsarray -nohdr -delim :)
+              count=0
+            	echo "["
+            	for line in ${RESULT//\\n/ }
+            	do 
+                  if [[ $count>0 ]]; then
+                    echo ","
+                  fi
+                    ARRAYID=$(echo $line| cut -d ':' -f1)
+            	ARRAYNAME=$(echo $line| cut -d ':' -f2)
+                    ARRAYCAPACITY=$(echo $line| cut -d ':' -f6)
+            printf "{\"{#ARRAY_ID}\":\"${ARRAYID}\", \"{#ARRAY_NAME}\":\"${ARRAYNAME}\", \"{#ARRAY_CAPACITY}\":\"${ARRAYCAPACITY}\"}"        
+            	count=$((count+1))
+            	done <<< "$line"
+            echo "]"
+          username: '{$SSHUSER}'
+          password: '{$SSHPASSWORD}'
+          lifetime: 7d
+          item_prototypes:
+            - uuid: d7a823cede024377a476005a1ed9512d
+              name: 'Array {#ARRAY_ID} - {#ARRAY_NAME}  [{#ARRAY_CAPACITY}] RAID status'
+              type: SSH
+              key: 'ssh.run[lsarray.{#ARRAY_ID}.{#ARRAY_NAME}.raidstatus,{HOST.IP},22,utf8]'
+              delay: 1h
+              value_type: TEXT
+              params: 'lsarray -filtervalue mdisk_id={#ARRAY_ID}:mdisk_name={#ARRAY_NAME} -delim , -nohdr |cut -d'','' -f7'
+              username: '{$SSHUSER}'
+              password: '{$SSHPASSWORD}'
+              description: |
+                Use the lsarray command to list the array MDisks.
+                Indicates the RAID status. The values are:
+                offline
+                The array is offline on all nodes.
+                degraded
+                The array has deconfigured or offline members; the array is not fully redundant.
+                syncing
+                The array members are all online. The array is synchronizing parity or mirrors to achieve redundancy.
+                initializing
+                The array members are all online. The array is initializing; the array is fully redundant.
+                online
+                The array members are all online and the array is fully redundant.
+                expanding
+                The array members are all online and the array is expanding.
+              preprocessing:
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 1h
+              tags:
+                - tag: component
+                  value: 'disk array'
+              trigger_prototypes:
+                - uuid: 8749fd12444d47c48d74989e766f7b73
+                  expression: 'last(/IBM Storwize via SSH/ssh.run[lsarray.{#ARRAY_ID}.{#ARRAY_NAME}.raidstatus,{HOST.IP},22,utf8],#2)="degraded" or last(/IBM Storwize via SSH/ssh.run[lsarray.{#ARRAY_ID}.{#ARRAY_NAME}.raidstatus,{HOST.IP},22,utf8],#2)="offline"'
+                  name: 'Array {#ARRAY_ID} - {#ARRAY_NAME}  [{#ARRAY_CAPACITY}] RAID fault'
+                  opdata: '{ITEM.LASTVALUE}'
+                  priority: AVERAGE
+                  description: |
+                    If is RAID array degraded in last 2 occurences
+                    Indicates the RAID status. The values are:
+                    offline
+                    The array is offline on all nodes.
+                    degraded
+                    The array has deconfigured or offline members; the array is not fully redundant.
+                    syncing
+                    The array members are all online. The array is synchronizing parity or mirrors to achieve redundancy.
+                    initializing
+                    The array members are all online. The array is initializing; the array is fully redundant.
+                    online
+                    The array members are all online and the array is fully redundant.
+                    expanding
+                    The array members are all online and the array is expanding.
+                  tags:
+                    - tag: component
+                      value: array
+            - uuid: a4f3693cc21c4ec69564abebbc9279b7
+              name: 'Array {#ARRAY_ID} - {#ARRAY_NAME}  [{#ARRAY_CAPACITY}] status'
+              type: SSH
+              key: 'ssh.run[lsarray.{#ARRAY_ID}.{#ARRAY_NAME}.status,{HOST.IP},22,utf8]'
+              delay: 1h
+              value_type: TEXT
+              params: 'lsarray -filtervalue mdisk_id={#ARRAY_ID}:mdisk_name={#ARRAY_NAME} -delim , -nohdr |cut -d'','' -f3'
+              username: '{$SSHUSER}'
+              password: '{$SSHPASSWORD}'
+              description: |
+                Use the lsarray command to list the array MDisks.
+                Indicates the array status. The values are:
+                online
+                offline
+                excluded
+                degraded (applies only to internal MDisks)
+              preprocessing:
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 1h
+              tags:
+                - tag: component
+                  value: 'disk array'
+              trigger_prototypes:
+                - uuid: e5389a3637164f5cb909c90a13ddadf9
+                  expression: 'last(/IBM Storwize via SSH/ssh.run[lsarray.{#ARRAY_ID}.{#ARRAY_NAME}.status,{HOST.IP},22,utf8])="degraded"'
+                  name: 'Array {#ARRAY_ID} - {#ARRAY_NAME}  [{#ARRAY_CAPACITY}] not online'
+                  opdata: '{ITEM.LASTVALUE}'
+                  priority: AVERAGE
+                  description: 'If is array degraded'
+                  tags:
+                    - tag: component
+                      value: array
+          preprocessing:
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1d
+        - uuid: 21f5206f8f0b436ca26e2f09b555b59e
+          name: 'Discover Drives'
+          type: SSH
+          key: 'ssh.run[lsdrive.discovery,{HOST.IP},22,utf8]'
+          delay: 1d
+          params: |
+            RESULT=$(lsdrive -nohdr -delim :)
+              count=0
+            	echo "["
+            	for line in ${RESULT//\\n/ }
+            	do 
+                  if [[ $count>0 ]]; then
+                    echo ","
+                  fi
+                    ENCLOSUREID=$(echo $line| cut -d ':' -f10)
+            	DRIVEID=$(echo $line| cut -d ':' -f11)
+                    DRIVESIZE=$(echo $line| cut -d ':' -f6)
+            printf "{\"{#ENCLOSURE_ID}\":\"${ENCLOSUREID}\", \"{#DRIVE_ID}\":\"${DRIVEID}\", \"{#DRIVE_SIZE}\":\"${DRIVESIZE}\"}"        
+            	count=$((count+1))
+            	done <<< "$line"
+            echo "]"
+          username: '{$SSHUSER}'
+          password: '{$SSHPASSWORD}'
+          lifetime: 7d
+          description: 'Use the lsdrive command to display configuration information and drive vital product data (VPD).'
+          item_prototypes:
+            - uuid: 52f3fc1972454c278f0dbd6913510d35
+              name: 'Drive {#DRIVE_ID} [{#DRIVE_SIZE}] in Enclosure {#ENCLOSURE_ID} mdisk'
+              type: SSH
+              key: 'ssh.run[lsdrive.{#ENCLOSURE_ID}.{#DRIVE_ID}.mdisk,{HOST.IP},22,utf8]'
+              delay: 1d
+              value_type: CHAR
+              params: 'lsdrive -filtervalue enclosure_id={#ENCLOSURE_ID}:slot_id={#DRIVE_ID} -delim , -nohdr |cut -d'','' -f8'
+              username: '{$SSHUSER}'
+              password: '{$SSHPASSWORD}'
+              description: |
+                Indicates the name of the MDisk that the drive is a member of.
+                Use the lsdrive command to display configuration information and drive vital product data (VPD).
+              preprocessing:
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 1d
+              tags:
+                - tag: component
+                  value: disk
+            - uuid: c22935bd676640d2b4a10f64617b3b37
+              name: 'Drive {#DRIVE_ID} [{#DRIVE_SIZE}] in Enclosure {#ENCLOSURE_ID} status'
+              type: SSH
+              key: 'ssh.run[lsdrive.{#ENCLOSURE_ID}.{#DRIVE_ID}.status,{HOST.IP},22,utf8]'
+              delay: 1h
+              value_type: CHAR
+              params: 'lsdrive -filtervalue enclosure_id={#ENCLOSURE_ID}:slot_id={#DRIVE_ID} -delim , -nohdr |cut -d'','' -f2'
+              username: '{$SSHUSER}'
+              password: '{$SSHPASSWORD}'
+              description: 'Use the lsdrive command to display configuration information and drive vital product data (VPD).'
+              preprocessing:
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 1h
+              tags:
+                - tag: component
+                  value: disk
+              trigger_prototypes:
+                - uuid: b82fb38ee7da427ab0e1c6c190169707
+                  expression: 'last(/IBM Storwize via SSH/ssh.run[lsdrive.{#ENCLOSURE_ID}.{#DRIVE_ID}.status,{HOST.IP},22,utf8])<>"online"'
+                  name: 'Drive {#DRIVE_ID} [{#DRIVE_SIZE}] in Enclosure {#ENCLOSURE_ID} problem {ITEM.LASTVALUE}'
+                  opdata: '{ITEM.LASTVALUE}'
+                  priority: WARNING
+                  tags:
+                    - tag: component
+                      value: disk
+          preprocessing:
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1d
+        - uuid: cae097f2437f45caa5f220118290901d
+          name: 'Discover Batteries'
+          type: SSH
+          key: 'ssh.run[lsenclosurebattery.discovery,{HOST.IP},22,utf8]'
+          delay: 1d
+          params: |
+            RESULT=$(lsenclosurebattery -nohdr -delim :)
+              count=0
+            	echo "["
+            	for line in ${RESULT//\\n/ }
+            	do 
+                  if [[ $count>0 ]]; then
+                    echo ","
+                  fi
+                    ENCLOSUREID=$(echo $line| cut -d ':' -f1)
+            		BATTERYID=$(echo $line| cut -d ':' -f2)
+            	printf "{\"{#ENCLOSURE_ID}\":\"${ENCLOSUREID}\", \"{#BATTERY_ID}\":\"${BATTERYID}\"}"     
+            	count=$((count+1))
+            	done <<< "$line"
+            echo "]"
+          username: '{$SSHUSER}'
+          password: '{$SSHPASSWORD}'
+          lifetime: 7d
+          item_prototypes:
+            - uuid: 2c209476e34048a0819c1906aba347b0
+              name: 'Battery {#BATTERY_ID} in Enclosure {#ENCLOSURE_ID} End Of Life'
+              type: SSH
+              key: 'ssh.run[lsenclosurebattery.{#ENCLOSURE_ID}.{#BATTERY_ID}.end_of_life_warning,{HOST.IP},22,utf8]'
+              delay: 1d
+              value_type: CHAR
+              params: 'lsenclosurebattery -filtervalue enclosure_id={#ENCLOSURE_ID}:battery_id={#BATTERY_ID} -delim , -nohdr |cut -d'','' -f7'
+              username: '{$SSHUSER}'
+              password: '{$SSHPASSWORD}'
+              tags:
+                - tag: component
+                  value: battery
+              trigger_prototypes:
+                - uuid: 4fb9ca50a0bc4762818d39900669725d
+                  expression: 'last(/IBM Storwize via SSH/ssh.run[lsenclosurebattery.{#ENCLOSURE_ID}.{#BATTERY_ID}.end_of_life_warning,{HOST.IP},22,utf8])="yes"'
+                  name: 'Battery {#BATTERY_ID} in Enclosure {#ENCLOSURE_ID} End Of Life'
+                  opdata: '{ITEM.LASTVALUE}'
+                  priority: AVERAGE
+            - uuid: 63b2cc9ec12c4ef593dc10c6be190892
+              name: 'Battery {#BATTERY_ID} in Enclosure {#ENCLOSURE_ID} percent charged'
+              type: SSH
+              key: 'ssh.run[lsenclosurebattery.{#ENCLOSURE_ID}.{#BATTERY_ID}.percent_charged,{HOST.IP},22,utf8]'
+              delay: 1d
+              units: '%'
+              params: 'lsenclosurebattery -filtervalue enclosure_id={#ENCLOSURE_ID}:battery_id={#BATTERY_ID} -delim , -nohdr |cut -d'','' -f6'
+              username: '{$SSHUSER}'
+              password: '{$SSHPASSWORD}'
+              tags:
+                - tag: component
+                  value: battery
+            - uuid: 084ef720ae0e40c4a5cdf87bf5187780
+              name: 'Battery {#BATTERY_ID} in Enclosure {#ENCLOSURE_ID} status'
+              type: SSH
+              key: 'ssh.run[lsenclosurebattery.{#ENCLOSURE_ID}.{#BATTERY_ID}.status,{HOST.IP},22,utf8]'
+              delay: 1h
+              value_type: CHAR
+              params: 'lsenclosurebattery -filtervalue enclosure_id={#ENCLOSURE_ID}:battery_id={#BATTERY_ID} -delim , -nohdr |cut -d'','' -f3'
+              username: '{$SSHUSER}'
+              password: '{$SSHPASSWORD}'
+              description: |
+                Identifies the status of the battery:
+                online indicates that the battery is present and working as usual.
+                degraded indicates that the battery is present but not working as usual.
+                offline indicates that the battery cannot be detected.
+              tags:
+                - tag: component
+                  value: battery
+              trigger_prototypes:
+                - uuid: 4ab85ac070384568bdacf2ac5800a36c
+                  expression: 'last(/IBM Storwize via SSH/ssh.run[lsenclosurebattery.{#ENCLOSURE_ID}.{#BATTERY_ID}.status,{HOST.IP},22,utf8])="degraded" or last(/IBM Storwize via SSH/ssh.run[lsenclosurebattery.{#ENCLOSURE_ID}.{#BATTERY_ID}.status,{HOST.IP},22,utf8])="offline"'
+                  name: 'Battery {#BATTERY_ID} in Enclosure {#ENCLOSURE_ID} {ITEM.LASTVALUE}'
+                  opdata: '{ITEM.LASTVALUE}'
+                  priority: WARNING
+          preprocessing:
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1d
+        - uuid: 5b88bf3bf6594527b2c14d2c786701f0
+          name: 'Discover Enclosure Canisters'
+          type: SSH
+          key: 'ssh.run[lsenclosurecanister.discovery,{HOST.IP},22,utf8]'
+          delay: 1d
+          params: |
+            RESULT=$(lsenclosurecanister -nohdr -delim :)
+              count=0
+            	echo "["
+            	for line in ${RESULT//\\n/ }
+            	do 
+                  if [[ $count>0 ]]; then
+                    echo ","
+                  fi
+                    ENCLOSUREID=$(echo $line| cut -d ':' -f1)
+            	    CANISTERID=$(echo $line| cut -d ':' -f2)
+                    CANISTERTYPE=$(echo $line| cut -d ':' -f4)
+            	printf "{\"{#ENCLOSURE_ID}\":\"${ENCLOSUREID}\", \"{#CANISTER_ID}\":\"${CANISTERID}\", \"{#CANISTER_TYPE}\":\"${CANISTERTYPE}\"}"     
+            	count=$((count+1))
+            	done <<< "$line"
+            echo "]"
+          username: '{$SSHUSER}'
+          password: '{$SSHPASSWORD}'
+          lifetime: 7d
+          item_prototypes:
+            - uuid: 6bb702b52ab24ba9b6b9e1a7ab7f4187
+              name: 'Canister {#CANISTER_ID} [{#CANISTER_TYPE}] in Enclosure {#ENCLOSURE_ID} status'
+              type: SSH
+              key: 'ssh.run[lsenclosurecanister.{#ENCLOSURE_ID}.{#CANISTER_ID}.status,{HOST.IP},22,utf8]'
+              delay: 1h
+              value_type: CHAR
+              params: 'lsenclosurecanister -filtervalue enclosure_id=1:canister_id=1 -delim , -nohdr |cut -d'','' -f3'
+              username: '{$SSHUSER}'
+              password: '{$SSHPASSWORD}'
+              description: 'Use the lsenclosurecanister command to view a detailed status for each canister in an enclosure.'
+              tags:
+                - tag: component
+                  value: canister
+                - tag: component
+                  value: enclosure
+              trigger_prototypes:
+                - uuid: c2e93588297248aa9c368e4115cf3f2b
+                  expression: 'last(/IBM Storwize via SSH/ssh.run[lsenclosurecanister.{#ENCLOSURE_ID}.{#CANISTER_ID}.status,{HOST.IP},22,utf8])<>"online"'
+                  name: 'Canister {#CANISTER_ID} [{#CANISTER_TYPE}] in Enclosure {#ENCLOSURE_ID} problem'
+                  priority: HIGH
+                  description: |
+                    Indicates the status of the canister. The values are:
+                    online indicates that the canister is present and working normally.
+                    degraded indicates that the canister is present but not working normally
+                    offline indicates that the canister could not be detected.
+          preprocessing:
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1d
+        - uuid: d9a5b024878c4c81bff0034960a167fa
+          name: 'Discover PSU'
+          type: SSH
+          key: 'ssh.run[lsenclosurepsu.discovery,{HOST.IP},22,utf8]'
+          delay: 1d
+          params: |
+            RESULT=$(lsenclosurepsu-nohdr -delim :)
+              count=0
+            	echo "["
+            	for line in ${RESULT//\\n/ }
+            	do 
+                  if [[ $count>0 ]]; then
+                    echo ","
+                  fi
+                    ENCLOSUREID=$(echo $line| cut -d ':' -f1)
+            		ENCLOSUREPSUID=$(echo $line| cut -d ':' -f2)
+            	printf "{\"{#ENCLOSURE_ID}\":\"${ENCLOSUREID}\", \"{#ENCLOSURE_PSUID}\":\"${ENCLOSUREPSUID}\"}"     
+            	count=$((count+1))
+            	done <<< "$line"
+            echo "]"
+          username: '{$SSHUSER}'
+          password: '{$SSHPASSWORD}'
+          lifetime: 7d
+          description: 'Use the lsenclosurepsu command to view information about each power-supply unit (PSU) in the enclosure.'
+          item_prototypes:
+            - uuid: 181d6a4b846b44468dae8fd846949f68
+              name: 'PSU {#ENCLOSURE_PSUID} in Enclosure {#ENCLOSURE_ID} status'
+              type: SSH
+              key: 'ssh.run[lsenclosurepsu.{#ENCLOSURE_ID}.{#ENCLOSURE_PSUID}.status,{HOST.IP},22,utf8]'
+              delay: 1h
+              value_type: CHAR
+              params: 'lsenclosurepsu -delim , -psu {#ENCLOSURE_PSUID} {#ENCLOSURE_ID} | grep status |cut -d'','' -f2'
+              username: '{$SSHUSER}'
+              password: '{$SSHPASSWORD}'
+              tags:
+                - tag: component
+                  value: 'power supply'
+              trigger_prototypes:
+                - uuid: 9159303260004d43b8a97dd6c244a1c5
+                  expression: 'last(/IBM Storwize via SSH/ssh.run[lsenclosurepsu.{#ENCLOSURE_ID}.{#ENCLOSURE_PSUID}.status,{HOST.IP},22,utf8])<>"online"'
+                  name: 'PSU {#ENCLOSURE_PSUID} in Enclosure {#ENCLOSURE_ID} not online'
+                  opdata: '{ITEM.LASTVALUE1}'
+                  priority: AVERAGE
+                  description: |
+                    Indicates the status of the power and cooling unit in the enclosure:
+                    online indicates that a PSU is present and working normally.
+                    offline indicates that a PSU cannot be detected.
+                    degraded indicates that a PSU is present but not working normally.
+          preprocessing:
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1d
+        - uuid: 208e592c01dc4103a7400bf0326f9dbc
+          name: 'Discover Enclosures'
+          type: SSH
+          key: 'ssh.run[lsenclosures.discovery,{HOST.IP},22,utf8]'
+          delay: 1d
+          params: |
+            RESULT=$(lsenclosure -nohdr -delim :)
+              count=0
+            	echo "["
+            	for line in ${RESULT//\\n/ }
+            	do 
+                  if [[ $count>0 ]]; then
+                    echo ","
+                  fi
+                    ENCLOSUREID=$(echo $line| cut -d ':' -f1)
+            		ENCLOSURETYPE=$(echo $line| cut -d ':' -f3)
+            	printf "{\"{#ENCLOSURE_ID}\":\"${ENCLOSUREID}\", \"{#ENCLOSURE_TYPE}\":\"${ENCLOSURETYPE}\"}"     
+            	count=$((count+1))
+            	done <<< "$line"
+            echo "]"
+          username: '{$SSHUSER}'
+          password: '{$SSHPASSWORD}'
+          lifetime: 7d
+          description: 'Use the lsenclosure command to view a summary of the enclosures.'
+          item_prototypes:
+            - uuid: 214f0b9948c648e3b62d437ddf9a57ef
+              name: 'Enclosure {#ENCLOSURE_ID} [{#ENCLOSURE_TYPE}] interface_speed'
+              type: SSH
+              key: 'ssh.run[lsenclosure.{#ENCLOSURE_ID}.interface_speed,{HOST.IP},22,utf8]'
+              delay: 1d
+              value_type: CHAR
+              params: 'lsenclosure -delim , {#ENCLOSURE_ID} | grep interface_speed |cut -d'','' -f2'
+              username: '{$SSHUSER}'
+              password: '{$SSHPASSWORD}'
+              description: 'SAN interface speed'
+              tags:
+                - tag: component
+                  value: enclosure
+            - uuid: 02f5c57396f443eda165170d1620073b
+              name: 'Enclosure {#ENCLOSURE_ID} [{#ENCLOSURE_TYPE}] product_MTM'
+              type: SSH
+              key: 'ssh.run[lsenclosure.{#ENCLOSURE_ID}.product_MTM,{HOST.IP},22,utf8]'
+              delay: 1d
+              value_type: CHAR
+              params: 'lsenclosure -delim , {#ENCLOSURE_ID} | grep product_MTM |cut -d'','' -f2'
+              username: '{$SSHUSER}'
+              password: '{$SSHPASSWORD}'
+              tags:
+                - tag: component
+                  value: enclosure
+            - uuid: 373d79d2d92e4620a8e5841c713274af
+              name: 'Enclosure {#ENCLOSURE_ID} [{#ENCLOSURE_TYPE}] serial_number'
+              type: SSH
+              key: 'ssh.run[lsenclosure.{#ENCLOSURE_ID}.serial_number,{HOST.IP},22,utf8]'
+              delay: 1d
+              value_type: CHAR
+              params: 'lsenclosure -delim , {#ENCLOSURE_ID} | grep serial_number |cut -d'','' -f2'
+              username: '{$SSHUSER}'
+              password: '{$SSHPASSWORD}'
+              tags:
+                - tag: component
+                  value: enclosure
+            - uuid: 4cb59a4d42a745fc870f223010af988d
+              name: 'Enclosure {#ENCLOSURE_ID} [{#ENCLOSURE_TYPE}] status'
+              type: SSH
+              key: 'ssh.run[lsenclosure.{#ENCLOSURE_ID}.status,{HOST.IP},22,utf8]'
+              delay: 1h
+              value_type: CHAR
+              params: 'lsenclosure -delim , {#ENCLOSURE_ID} | grep status |cut -d'','' -f2'
+              username: '{$SSHUSER}'
+              password: '{$SSHPASSWORD}'
+              description: 'Enclosure status'
+              tags:
+                - tag: component
+                  value: enclosure
+              trigger_prototypes:
+                - uuid: 61ca2079a423496bb08bffea67d73c62
+                  expression: 'last(/IBM Storwize via SSH/ssh.run[lsenclosure.{#ENCLOSURE_ID}.status,{HOST.IP},22,utf8])="degraded"'
+                  name: 'Enclosure {#ENCLOSURE_ID} [{#ENCLOSURE_TYPE}] status {ITEM.LASTVALUE}'
+                  opdata: '{ITEM.LASTVALUE1}'
+                  priority: AVERAGE
+                  description: |
+                    Indicates whether an enclosure is visible to the SAS network:
+                    online if a managed or unmanaged enclosure is visible.
+                    offline if a managed enclosure is not visible, and other fields hold their last known values.
+                    degraded if an enclosure is visible, but not down both strands.
+          preprocessing:
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1d
+        - uuid: 3084a149a3874eb18054a7bd3a8109c9
+          name: 'Discover Hosts'
+          type: SSH
+          key: 'ssh.run[lshost.discovery,{HOST.IP},22,utf8]'
+          delay: 1d
+          params: |
+            RESULT=$(lshost -nohdr -delim :)
+              count=0
+            	echo "["
+            	for line in ${RESULT//\\n/ }
+            	do 
+                  if [[ $count>0 ]]; then
+                    echo ","
+                  fi
+                    HOSTID=$(echo $line| cut -d ':' -f1)
+            	    HOSTNAMESTRING=$(echo $line| cut -d ':' -f2)
+                    CLUSTERNAME=$(echo $line| cut -d ':' -f9)
+            	printf "{\"{#HOST_ID}\":\"${HOSTID}\", \"{#HOST_NAME}\":\"${HOSTNAMESTRING}\", \"{#CLUSTER_NAME}\":\"${CLUSTERNAME}\"}"     
+            	count=$((count+1))
+            	done <<< "$line"
+            echo "]"
+          username: '{$SSHUSER}'
+          password: '{$SSHPASSWORD}'
+          lifetime: 1d
+          description: 'Use the lshost command to generate a list with concise information about all the hosts visible to the system and detailed information about a single host.'
+          item_prototypes:
+            - uuid: 23d0b6754fe844cd97f89d73f4c69a7d
+              name: 'HOST [{#HOST_NAME}] in cluster {#CLUSTER_NAME} status'
+              type: SSH
+              key: 'ssh.run[lshost.{#HOST_ID}.{#HOST_NAME}.status,{HOST.IP},22,utf8]'
+              delay: 1h
+              value_type: CHAR
+              params: 'lshost -filtervalue id=1:name=HOST012 -delim , -nohdr |cut -d'','' -f5'
+              username: '{$SSHUSER}'
+              password: '{$SSHPASSWORD}'
+              description: 'lshost command to generate a list with concise information about all the hosts visible to the clustered system (system)'
+              tags:
+                - tag: component
+                  value: host
+              trigger_prototypes:
+                - uuid: ce82ca33e47340528f9ab2584f7f467e
+                  expression: 'last(/IBM Storwize via SSH/ssh.run[lshost.{#HOST_ID}.{#HOST_NAME}.status,{HOST.IP},22,utf8])="offline"'
+                  name: 'HOST{#HOST_NAME} in cluster {#CLUSTER_NAME} status'
+                  priority: WARNING
+                  description: |
+                    Indicates the state of the SAS WWPN login. The values are:
+                    offline
+                    inactive
+                    active
+          preprocessing:
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1d
+        - uuid: ff634b132051413984f40b545ca5ca02
+          name: 'Discover Remote Copy'
+          type: SSH
+          key: 'ssh.run[lsrcconsistgrp.discovery,{HOST.IP},22,utf8]'
+          delay: 1d
+          params: |
+            RESULT=$(lsrcconsistgrp -nohdr -delim :)
+              count=0
+            	echo "["
+            	for line in ${RESULT//\\n/ }
+            	do 
+                  if [[ $count>0 ]]; then
+                    echo ","
+                  fi
+                    CONNSTGRPID=$(echo $line| cut -d ':' -f1)
+            		CONNSTGRPNAME=$(echo $line| cut -d ':' -f2)
+                    COPYTYPE=$(echo $line| cut -d ':' -f10)
+            printf "{\"{#CONNSTGRP_ID}\":\"${CONNSTGRPID}\", \"{#CONNSTGRP_NAME}\":\"${CONNSTGRPNAME}\", \"{#COPY_TYPE}\":\"${COPYTYPE}\"}"        
+            	count=$((count+1))
+            	done <<< "$line"
+            echo "]"
+          username: '{$SSHUSER}'
+          password: '{$SSHPASSWORD}'
+          lifetime: 7d
+          description: 'Use the lsrcconsistgrp command to return a concise list or a detailed view of remote copy relationships such as Metro Mirror, Global Mirror, or active-active consistency groups visible to the system.'
+          item_prototypes:
+            - uuid: 2a2ca7ea17ff459797f106b4506d8068
+              name: 'Remote Copy [{#CONNSTGRP_NAME} - {#COPY_TYPE}] master node'
+              type: SSH
+              key: 'ssh.run[lsrcconsistgrp.{#CONNSTGRP_ID}.{#CONNSTGRP_NAME}.master_cluster_name,{HOST.IP},22,utf8]'
+              delay: 1h
+              value_type: CHAR
+              params: 'lsrcconsistgrp -filtervalue id={#CONNSTGRP_ID}:name={#CONNSTGRP_NAME} -delim , -nohdr |cut -d'','' -f4'
+              username: '{$SSHUSER}'
+              password: '{$SSHPASSWORD}'
+              description: 'Use the lsrcconsistgrp command to return a concise list or a detailed view of remote copy relationships such as Metro Mirror, Global Mirror, or active-active consistency groups visible to the system.'
+              tags:
+                - tag: component
+                  value: 'remote copy'
+              trigger_prototypes:
+                - uuid: ce13ebf098914f68b1ea41920eaa1d0c
+                  expression: 'last(/IBM Storwize via SSH/ssh.run[lsrcconsistgrp.{#CONNSTGRP_ID}.{#CONNSTGRP_NAME}.master_cluster_name,{HOST.IP},22,utf8],#1)<>last(/IBM Storwize via SSH/ssh.run[lsrcconsistgrp.{#CONNSTGRP_ID}.{#CONNSTGRP_NAME}.master_cluster_name,{HOST.IP},22,utf8],#2)'
+                  name: 'Remote Copy [{#CONNSTGRP_NAME} - {#COPY_TYPE}] master node changed'
+                  opdata: '{ITEM.LASTVALUE1} - {ITEM.LASTVALUE2}'
+                  priority: WARNING
+                  manual_close: 'YES'
+                  tags:
+                    - tag: component
+                      value: 'remote copy'
+            - uuid: 3029cb057f03495098214261db2f6256
+              name: 'Remote Copy [{#CONNSTGRP_NAME} - {#COPY_TYPE}] state'
+              type: SSH
+              key: 'ssh.run[lsrcconsistgrp.{#CONNSTGRP_ID}.{#CONNSTGRP_NAME}.state,{HOST.IP},22,utf8]'
+              delay: 1h
+              value_type: CHAR
+              params: 'lsrcconsistgrp -filtervalue id={#CONNSTGRP_ID}:name={#CONNSTGRP_NAME} -delim , -nohdr |cut -d'','' -f8'
+              username: '{$SSHUSER}'
+              password: '{$SSHPASSWORD}'
+              description: 'Use the lsrcconsistgrp command to return a concise list or a detailed view of remote copy relationships such as Metro Mirror, Global Mirror, or active-active consistency groups visible to the system.'
+              tags:
+                - tag: component
+                  value: 'remote copy'
+              trigger_prototypes:
+                - uuid: c234c893587e449797325d6275c2f5d4
+                  expression: 'last(/IBM Storwize via SSH/ssh.run[lsrcconsistgrp.{#CONNSTGRP_ID}.{#CONNSTGRP_NAME}.state,{HOST.IP},22,utf8])<>"consistent_synchronized"'
+                  name: 'Remote Copy [{#CONNSTGRP_NAME} - {#COPY_TYPE}] not synhronizing'
+                  opdata: '{ITEM.LASTVALUE1}'
+                  priority: WARNING
+                  description: |
+                    Indicates the state. The values are:
+                    consistent_copying
+                    inconsistent_stopped
+                    inconsistent_copying
+                    consistent_stopped
+                    consistent_synchronized
+                    idling
+                    idling_disconnected
+                    inconsistent_disconnected
+                    consistent_disconnected
+                    empty
+                  manual_close: 'YES'
+                  tags:
+                    - tag: component
+                      value: remote_copy
+          preprocessing:
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1d
+        - uuid: 53672ae02fb44202a6e373500607ae3e
+          name: 'Discover Volumes LUNs'
+          type: SSH
+          key: 'ssh.run[lsvdisk.discovery,{HOST.IP},22,utf8]'
+          delay: 1d
+          params: |
+            RESULT=$(lsvdisk -nohdr -delim :)
+              count=0
+            	echo "["
+            	for line in ${RESULT//\\n/ }
+            	do 
+                  if [[ $count>0 ]]; then
+                    echo ","
+                  fi
+                    VDISKID=$(echo $line| cut -d ':' -f1)
+            	VDISKNAME=$(echo $line| cut -d ':' -f2)
+                    VDISKSIZE=$(echo $line| cut -d ':' -f8)
+            printf "{\"{#VDISK_ID}\":\"${VDISKID}\", \"{#VDISK_NAME}\":\"${VDISKNAME}\", \"{#VDISK_SIZE}\":\"${VDISKSIZE}\"}"        
+            	count=$((count+1))
+            	done <<< "$line"
+            echo "]"
+          username: '{$SSHUSER}'
+          password: '{$SSHPASSWORD}'
+          lifetime: 7d
+          description: 'Use the lsvdisk command to display a concise list or a detailed view of volumes that are recognized by the system'
+          item_prototypes:
+            - uuid: 5e2cd7cdac8246a8a59dbdb024cada58
+              name: 'Volume {#VDISK_NAME} [{#VDISK_SIZE}] status'
+              type: SSH
+              key: 'ssh.run[lsvdisk.{#VDISK_ID}.{#VDISK_NAME}.status,{HOST.IP},22,utf8]'
+              delay: 1h
+              value_type: CHAR
+              params: 'lsvdisk -filtervalue name={#VDISK_NAME}:id={#VDISK_ID} -delim , -nohdr |cut -d'','' -f5'
+              username: '{$SSHUSER}'
+              password: '{$SSHPASSWORD}'
+              description: 'Use the lsvdisk command to display a concise list or a detailed view of volumes that are recognized by the system'
+              tags:
+                - tag: component
+                  value: LUN
+                - tag: component
+                  value: volume
+              trigger_prototypes:
+                - uuid: 4c268048c5e449e1aba2f8303a02a986
+                  expression: 'last(/IBM Storwize via SSH/ssh.run[lsvdisk.{#VDISK_ID}.{#VDISK_NAME}.status,{HOST.IP},22,utf8])="degraded"'
+                  name: 'Volume {#VDISK_NAME} [{#VDISK_SIZE}] is degraded'
+                  priority: WARNING
+                  description: |
+                    Indicates the status. The value can be online, offline, degraded, or deleting.
+                    For online HyperSwap® volumes the scope of offline copy is included with the status information. For offline volumes the auxiliary copy is included with the status information even if the copy associated with that is online.
+          preprocessing:
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1d
+      tags:
+        - tag: class
+          value: hardware
+        - tag: component
+          value: Storage
+        - tag: type
+          value: 'IBM Storwize'
+      macros:
+        - macro: '{$SSHPASSWORD}'
+        - macro: '{$SSHUSER}'
